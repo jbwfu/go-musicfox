@@ -90,6 +90,7 @@ replace (
 	// github.com/cnsilvan/UnblockNeteaseMusic => ../UnblockNeteaseMusic
 	github.com/cocoonlife/goflac v0.0.0-20170210142907-50ea06ed5a9d => github.com/go-musicfox/goflac v0.1.5
 	github.com/frolovo22/tag v0.0.2 => github.com/go-musicfox/tag v1.0.2
+	github.com/go-musicfox/notificator v0.1.2 => github.com/jbwfu/notificator v0.0.0-20250302150634-a1f9e5983a26
 	// github.com/go-musicfox/netease-music => ../netease-music
 	// github.com/go-musicfox/requests => ../requests
 	github.com/gookit/gcli/v2 v2.3.4 => github.com/anhoder/gcli/v2 v2.3.5
