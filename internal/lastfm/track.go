@@ -2,6 +2,7 @@ package lastfm
 
 import (
 	"errors"
+	"fmt"
 	"log/slog"
 	"sync"
 	"time"
@@ -44,10 +45,12 @@ func (t *Tracker) processPendingScrobbles() {
 		if retry, err := t.scrobble(t.pending.Scrobbles[0]); err != nil {
 			slog.Error("上报出错，已暂停", slog.Any("error", err.Error()))
 			if !retry {
+				slog.Debug("不可重试，已丢弃", slog.Any("Scrobble", t.pending.Scrobbles[0]))
 				t.pending.Scrobbles = t.pending.Scrobbles[1:]
 			}
 			break
 		}
+		slog.Debug("Scrobble 成功", slog.Any("name", t.pending.Scrobbles[0].Track))
 		t.pending.Scrobbles = t.pending.Scrobbles[1:]
 	}
 	if len(t.pending.Scrobbles) > 0 {
@@ -86,7 +89,7 @@ func (t *Tracker) scrobble(scrobble storage.Scrobble) (retry bool, err error) {
 	if t.IsScrobbleExpired(scrobble) {
 		return false, errors.New("scrobble 已过期")
 	}
-	_, err = t.client.api.Track.Scrobble(map[string]any{
+	result, err := t.client.api.Track.Scrobble(map[string]any{
 		"artist":    scrobble.Artist,
 		"track":     scrobble.Track,
 		"album":     scrobble.Album,
@@ -95,6 +98,9 @@ func (t *Tracker) scrobble(scrobble storage.Scrobble) (retry bool, err error) {
 	})
 
 	retry, err = t.client.errorHandle(err)
+	if err != nil {
+		slog.Debug(fmt.Sprintf("上报失败，返回内容：%v", result))
+	}
 	return
 }
 
@@ -121,6 +127,8 @@ func (t *Tracker) Playing(scrobble storage.Scrobble) {
 	}
 	if err := t.updateNowPlaying(scrobble); err != nil {
 		slog.Error("上报当前播放出错: ", slog.Any("error", err.Error()))
+	} else {
+		slog.Debug("上报播放成功", slog.Any("name", scrobble.Track))
 	}
 }
 

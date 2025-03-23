@@ -18,7 +18,7 @@ func init() {
 		panic(fmt.Sprintf("failed to open log file, err: %v", err))
 	}
 
-	logger := slog.New(slog.NewTextHandler(f, &slog.HandlerOptions{AddSource: true}))
+	logger := slog.New(slog.NewTextHandler(f, &slog.HandlerOptions{AddSource: true, Level: slog.LevelDebug}))
 
 	log.SetOutput(f)
 	slog.SetDefault(logger)

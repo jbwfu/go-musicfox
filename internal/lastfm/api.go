@@ -76,6 +76,10 @@ func (c *Client) errorHandle(e error) (bool, error) {
 	if e == nil {
 		return false, nil
 	}
+
+	slog.Debug("错误类型", slog.Any("Type", fmt.Sprintf("%T", e)))
+	slog.Debug("错误内容", slog.Any("error", e))
+
 	var lastfmErr *lastfmgo.LastfmError
 	if errors.As(e, &lastfmErr) {
 		switch lastfmErr.Code {
