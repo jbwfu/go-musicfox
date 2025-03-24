@@ -2,6 +2,7 @@ package player
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -88,6 +89,7 @@ func (p *beepPlayer) listen() {
 		cancel     context.CancelFunc
 		prevSongId int64
 		doneHandle = func() {
+			slog.Debug("(beepPlayer).listen 函数 doneHandle 被调用")
 			select {
 			case done <- struct{}{}:
 			case <-p.close:
@@ -108,21 +110,26 @@ func (p *beepPlayer) listen() {
 			}
 			return
 		case <-done:
+			slog.Debug("(beepPlayer).listen 接收到 done 信号，即将停止播放")
 			p.Stop()
 		case p.curMusic = <-p.musicChan:
+			slog.Debug(fmt.Sprintf("(beepPlayer).listen 成功接收音乐：%v", p.curMusic.Name))
 			p.l.Lock()
+			slog.Debug("(beepPlayer).listen 成功获取锁，开始初始化本次播放")
 			p.pausedNoLock()
 			if p.timer != nil {
 				p.timer.SetPassed(0)
 			}
 			// 清理上一轮
 			if cancel != nil {
+				slog.Debug("(beepPlayer).listen 清理上一轮播放信息")
 				cancel()
 			}
 			p.reset()
 			ctx, cancel = context.WithCancel(context.Background())
 
 			if prevSongId != p.curMusic.Id || !filex.FileOrDirExists(cacheFile) {
+				slog.Debug("(beepPlayer).listen 曲目更新或无缓存文件")
 				// FIXME: 先这样处理，暂时没想到更好的办法
 				if p.cacheReader, err = os.OpenFile(cacheFile, os.O_CREATE|os.O_TRUNC|os.O_RDONLY, 0666); err != nil {
 					panic(err)
@@ -145,12 +152,16 @@ func (p *beepPlayer) listen() {
 
 				// 边下载边播放
 				go func(ctx context.Context, cacheWFile *os.File, read io.ReadCloser) {
+					slog.Debug("(beepPlayer).listen 边下边播")
 					defer func() {
 						if errorx.Recover(true) {
+							slog.Debug("(beepPlayer).listen panic!! 尝试恢复")
 							p.Stop()
+							slog.Debug("(beepPlayer).listen 已停止播放")
 						}
 					}()
 					_, _ = iox.CopyClose(ctx, cacheWFile, read)
+					slog.Debug(fmt.Sprintf("(beepPlayer).listen p.cacheDownloaded 状态变更 %v -> %v", p.cacheDownloaded, true))
 					p.l.Lock()
 					defer p.l.Unlock()
 					if p.curStreamer == nil {
@@ -161,6 +172,7 @@ func (p *beepPlayer) listen() {
 					if p.curMusic.Type == Mp3 && configs.ConfigRegistry.Player.BeepMp3Decoder != types.BeepMiniMp3Decoder {
 						// 需再开一次文件，保证其指针变化，否则将概率导致 p.ctrl.Streamer = beep.Seq(……) 直接停止播放
 						cacheReader, _ := os.OpenFile(cacheFile, os.O_RDONLY, 0666)
+						slog.Debug(fmt.Sprintf("(beepPlayer).listen 重新打开一次文件 %s，指针 %v -> %v", cacheFile, p.cacheReader, cacheReader))
 						// 使用新的文件后需手动Seek到上次播放处
 						lastStreamer := p.curStreamer
 						defer func() { _ = lastStreamer.Close() }()
@@ -175,6 +187,7 @@ func (p *beepPlayer) listen() {
 						if pos < 0 {
 							pos = 1
 						}
+						slog.Debug(fmt.Sprintf("(beepPlayer).listen 重新定位至 pos：%v, percent：%.2f%%", pos, float64(pos)/float64(p.curStreamer.Len()*100)))
 						_ = p.curStreamer.Seek(pos)
 						p.ctrl.Streamer = beep.Seq(p.resampleStreamer(p.curFormat.SampleRate), beep.Callback(doneHandle))
 					}
@@ -192,6 +205,7 @@ func (p *beepPlayer) listen() {
 				}
 			} else {
 				// 单曲循环以及歌单只有一首歌时不再请求网络
+				slog.Debug("(beepPlayer).listen 直接使用历史缓存文件")
 				p.cacheDownloaded = true
 				if p.cacheReader, err = os.OpenFile(cacheFile, os.O_RDONLY, 0666); err != nil {
 					panic(err)
@@ -210,6 +224,7 @@ func (p *beepPlayer) listen() {
 			speaker.Play(p.volume)
 
 			// 计时器
+			slog.Debug("(beepPlayer).listen 更新计时器")
 			p.timer = timex.NewTimer(timex.Options{
 				Duration:       8760 * time.Hour,
 				TickerInternal: 200 * time.Millisecond,
@@ -223,10 +238,12 @@ func (p *beepPlayer) listen() {
 					}
 				},
 			})
+			slog.Debug("(beepPlayer).listen 恢复播放")
 			p.resumeNoLock()
 			prevSongId = p.curMusic.Id
 
 		nextLoop:
+			slog.Debug("(beepPlayer).listen 本次播放处理完成，释放锁")
 			p.l.Unlock()
 		}
 	}
@@ -247,11 +264,21 @@ func (p *beepPlayer) CurMusic() URLMusic {
 }
 
 func (p *beepPlayer) setState(state types.State) {
+	if p.curStreamer != nil {
+		slog.Debug(fmt.Sprintf("(*beepPlayer).setState p.cacheDownloaded %v", p.cacheDownloaded))
+		slog.Debug(fmt.Sprintf("(*beepPlayer).setState 总节点：%v，当前节点：%v，总时间：%v，播放时间：%v，计算所得时间：%v",
+			p.curStreamer.Len(), p.curStreamer.Position(), p.curMusic.Duration.Round(time.Second), p.PassedTime().Round(time.Second), sampleRate.D(p.curStreamer.Position()).Round(time.Second)))
+		slog.Debug(fmt.Sprintf("当前码率：%v", p.curFormat.SampleRate))
+	}
+
+	txt := fmt.Sprintf("%s -> %s", p.state, state)
+	slog.Debug("(*beepPlayer).setState 触发状态变更", slog.Any("info", txt))
 	p.state = state
 	select {
 	case p.stateChan <- state:
 	case <-time.After(time.Second * 2):
 	}
+	slog.Debug("(*beepPlayer).setState 状态变更成功", slog.Any("info", txt))
 }
 
 // State 当前状态
@@ -278,6 +305,7 @@ func (p *beepPlayer) TimeChan() <-chan time.Duration {
 
 func (p *beepPlayer) Seek(duration time.Duration) {
 	if duration < 0 || !p.cacheDownloaded {
+		slog.Debug("(*beepPlayer).Seek 无有效播放时长，取消 Seek")
 		return
 	}
 	// FIXME: 暂时仅对MP3格式提供跳转功能
@@ -285,10 +313,18 @@ func (p *beepPlayer) Seek(duration time.Duration) {
 	// 导致Seek方法卡住20-40秒的时间，之后方可随意跳转
 	// minimp3未实现Seek
 	if p.curStreamer == nil || p.curMusic.Type != Mp3 || configs.ConfigRegistry.Player.BeepMp3Decoder == types.BeepMiniMp3Decoder {
+		slog.Debug("(*beepPlayer).Seek 不支持 Seek")
 		return
 	}
 	if p.state == types.Playing || p.state == types.Paused {
 		speaker.Lock()
+
+		slog.Debug(fmt.Sprintf("(*beepPlayer).Seek 音乐节点：%v，当前节点：%v，跳转至节点：%v",
+			p.curStreamer.Len(), p.curStreamer.Position(), sampleRate.N(duration)))
+
+		slog.Debug(fmt.Sprintf("(*beepPlayer).Seek 音乐时长：%v，当前时长：%v，跳转至：%v",
+			p.curMusic.Duration.Round(time.Second), sampleRate.D(p.curStreamer.Position()), duration.Round(time.Second)))
+
 		newPos := p.curFormat.SampleRate.N(duration)
 
 		if newPos < 0 {
@@ -303,6 +339,8 @@ func (p *beepPlayer) Seek(duration time.Duration) {
 				slog.Error("seek error", slogx.Error(err))
 			}
 		}
+		slog.Debug(fmt.Sprintf("(*beepPlayer).Seek 音乐节点：%v，当前节点：%v",
+			p.curStreamer.Len(), p.curStreamer.Position()))
 		if p.timer != nil {
 			p.timer.SetPassed(duration)
 		}
@@ -365,7 +403,9 @@ func (p *beepPlayer) pausedNoLock() {
 
 // Pause 暂停播放
 func (p *beepPlayer) Pause() {
+	slog.Debug("(*beepPlayer).Pause 正在尝试获取锁以暂停播放")
 	p.l.Lock()
+	slog.Debug("(*beepPlayer).Pause 成功获取锁")
 	defer p.l.Unlock()
 	p.pausedNoLock()
 }
@@ -381,7 +421,9 @@ func (p *beepPlayer) resumeNoLock() {
 
 // Resume 继续播放
 func (p *beepPlayer) Resume() {
+	slog.Debug("(*beepPlayer).Resume 正在尝试获取锁以恢复播放")
 	p.l.Lock()
+	slog.Debug("(*beepPlayer).Resume 成功获取锁")
 	defer p.l.Unlock()
 	p.resumeNoLock()
 }
@@ -397,13 +439,16 @@ func (p *beepPlayer) stopNoLock() {
 
 // Stop 停止
 func (p *beepPlayer) Stop() {
+	slog.Debug("(*beepPlayer).Stop 正在尝试获取锁以停止播放")
 	p.l.Lock()
+	slog.Debug("(*beepPlayer).Stop 获取锁成功")
 	defer p.l.Unlock()
 	p.stopNoLock()
 }
 
 // Toggle 切换状态
 func (p *beepPlayer) Toggle() {
+	slog.Debug("(*beepPlayer)Toggle 切换状态")
 	switch p.State() {
 	case types.Paused, types.Stopped:
 		p.Resume()
@@ -412,6 +457,7 @@ func (p *beepPlayer) Toggle() {
 	default:
 		p.Resume()
 	}
+	slog.Debug("(*beepPlayer).Toggle 由相应调用释放锁")
 }
 
 // Close 关闭
@@ -446,6 +492,8 @@ func (p *beepPlayer) reset() {
 	speaker.Clear()
 }
 
+var lastLogTime time.Time
+
 func (p *beepPlayer) streamer(samples [][2]float64) (n int, ok bool) {
 	defer func() {
 		if err := recover(); err != nil {
@@ -453,14 +501,30 @@ func (p *beepPlayer) streamer(samples [][2]float64) (n int, ok bool) {
 			p.Stop()
 		}
 	}()
+
 	pos := p.curStreamer.Position()
 	n, ok = p.curStreamer.Stream(samples)
 	err := p.curStreamer.Err()
+
+	func() {
+		if time.Since(lastLogTime) > 500*time.Millisecond {
+			lastLogTime = time.Now()
+			slog.Debug(fmt.Sprintf("(*beepPlayer)streamer total: %v, pos: %v, percent: %.2f%%, n: %v, ok: %v, err: %v",
+				p.curStreamer.Len(), pos, float64(pos)/float64(p.curStreamer.Len())*100, n, ok, err))
+		}
+	}()
+
 	if err == nil && (ok || p.cacheDownloaded) {
 		return
 	}
+
+	// if pos >= sampleRate.N(p.curMusic.Duration) {
+	// 	return
+	// }
 	p.pausedNoLock()
 
+	// FIXME: 单曲循环等待时间过长
+	// 可能为单曲循环模式下缓存状态与实际状态不一致导致，考虑重构这部分代码
 	retry := 4
 	for !ok && retry > 0 {
 		if p.curMusic.Type == Flac {
@@ -469,6 +533,7 @@ func (p *beepPlayer) streamer(samples [][2]float64) (n int, ok bool) {
 			}
 		}
 		errorx.ResetError(p.curStreamer)
+		slog.Debug(fmt.Sprintf("(*beepPlayer)streamer 获取内容失败，正在等待重试，当前剩余 %v", retry))
 
 		select {
 		case <-time.After(time.Second * 5):
@@ -484,7 +549,9 @@ func (p *beepPlayer) streamer(samples [][2]float64) (n int, ok bool) {
 
 func (p *beepPlayer) resampleStreamer(old beep.SampleRate) beep.Streamer {
 	if old == sampleRate {
+		slog.Debug("(*beepPlayer).resampleStreamer 无需额外解码")
 		return beep.StreamerFunc(p.streamer)
 	}
+	slog.Debug("(*beepPlayer).resampleStreamer 需额外解码")
 	return beep.Resample(resampleQuiality, old, sampleRate, beep.StreamerFunc(p.streamer))
 }

@@ -1,6 +1,8 @@
 package ui
 
 import (
+	"fmt"
+	"log/slog"
 	"slices"
 	"time"
 
@@ -323,6 +325,7 @@ func (h *EventHandler) enterKeyHandle() (stopPropagation bool, newPage model.Pag
 
 // 空格监听
 func (h *EventHandler) spaceKeyHandle() {
+	slog.Debug("space 按下")
 	var (
 		songs         []structs.Song
 		main          = h.netease.MustMain()
@@ -336,6 +339,7 @@ func (h *EventHandler) spaceKeyHandle() {
 
 	selectedIndex := menu.RealDataIndex(main.SelectedIndex())
 	if me, ok := menu.(Menu); !ok || !me.IsPlayable() || len(songs) == 0 || selectedIndex > len(songs)-1 {
+		slog.Debug("位于不可播放页面处理")
 		if player.CurSongIndex() > len(player.Playlist())-1 {
 			return
 		}
@@ -351,6 +355,7 @@ func (h *EventHandler) spaceKeyHandle() {
 	}
 
 	if inPlayingMenu && songs[selectedIndex].Id == player.CurSong().Id {
+		slog.Debug("切换当前曲目状态", slog.Any("song", player.CurSong().Name))
 		switch player.State() {
 		case types.Paused:
 			player.Resume()
@@ -362,6 +367,7 @@ func (h *EventHandler) spaceKeyHandle() {
 		return
 	}
 
+	slog.Debug("播放列表切换", slog.Any("info", fmt.Sprintf("%v -> %v", player.playingMenuKey, menu.GetMenuKey())))
 	newPlaylist := make([]structs.Song, len(songs))
 	copy(newPlaylist, songs)
 	player.songManager.init(selectedIndex, newPlaylist)
@@ -379,6 +385,9 @@ func (h *EventHandler) spaceKeyHandle() {
 }
 
 func (h *EventHandler) MouseMsgHandle(msg tea.MouseMsg, a *model.App) (stopPropagation bool, newPage model.Page, cmd tea.Cmd) {
+	if msg.String() != "motion" {
+		slog.Debug("处理鼠标事件", slog.Any("msg", fmt.Sprintf("name: %v, X: %v, Y: %v", msg.String(), msg.X, msg.Y)))
+	}
 	var (
 		player = h.netease.player
 		main   = a.MustMain()
@@ -393,6 +402,8 @@ func (h *EventHandler) MouseMsgHandle(msg tea.MouseMsg, a *model.App) (stopPropa
 				return true, main, nil
 			}
 			duration := float64(x) * player.CurMusic().Duration.Seconds() / float64(w)
+			slog.Debug("Seek 信息", slog.Any("info",
+				fmt.Sprintf("总时长：%v，Seek 时长：%v -> %v", time.Second*time.Duration(allDuration), player.PassedTime(), time.Second*time.Duration(duration))))
 			player.Seek(time.Second * time.Duration(duration))
 			if player.State() != types.Playing {
 				player.Resume()

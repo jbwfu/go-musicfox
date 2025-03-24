@@ -5,6 +5,7 @@ package remote_control
 import (
 	"fmt"
 	"log"
+	"log/slog"
 	"math"
 	"os"
 	"sync"
@@ -273,6 +274,7 @@ func (s *RemoteControl) SetPlayingInfo(info PlayingInfo) {
 	if s.props == nil {
 		return
 	}
+	slog.Debug("(*RemoteControl).SetPlayingInfo 更新远程信息")
 	// Playback Status
 	go func() {
 		playbackStatus, err := PlaybackStatusFromPlayer(info.State)

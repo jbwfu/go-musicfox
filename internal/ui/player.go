@@ -117,6 +117,7 @@ func NewPlayer(n *Netease) *Player {
 			case <-ctx.Done():
 				return
 			case signal := <-p.ctrl:
+				slog.Debug("Go(remote control) 接受到控制信号", slog.Any("ControlSignal", signal))
 				p.handleControlSignal(signal)
 			}
 		}
@@ -129,11 +130,14 @@ func NewPlayer(n *Netease) *Player {
 			case <-ctx.Done():
 				return
 			case s := <-p.StateChan():
+				slog.Debug("Go(状态监听) 接收到状态变更", slog.Any("State", s))
 				p.stateHandler.SetPlayingInfo(p.PlayingInfo())
+				slog.Debug("Go(状态监听) 远程信息同步完成")
 				if s != types.Stopped {
 					p.netease.Rerender(false)
 					break
 				}
+				slog.Debug("Go(状态监听) 播放已停止，切换至下一首", slog.Any("State", "types.Stopped"))
 				p.NextSong(false)
 			}
 		}
@@ -147,7 +151,11 @@ func NewPlayer(n *Netease) *Player {
 				return
 			case duration := <-p.TimeChan():
 				p.stateHandler.SetPosition(p.PassedTime())
+				if duration.Seconds() > p.CurMusic().Duration.Seconds() {
+					slog.Debug(fmt.Sprintf("Go(时间监听) 计时器时长已超过总时长 %.2fs", duration.Seconds()-p.CurMusic().Duration.Seconds()))
+				}
 				if duration.Seconds()-p.CurMusic().Duration.Seconds() > 10 {
+					slog.Debug("Go(时间监听) 接收时间大于播放项总时长 10s，切换下一首")
 					p.NextSong(false)
 				}
 				if p.lrcTimer != nil {
@@ -382,6 +390,7 @@ func (p *Player) CompareWithCurPlaylist(playlist []structs.Song) bool {
 
 // LocatePlayingSong 定位到正在播放的音乐
 func (p *Player) LocatePlayingSong() {
+	slog.Debug("(*Player).LocatePlayingSong 尝试在 TUI 定位到当前音乐")
 	var (
 		main        = p.netease.MustMain()
 		curMenu, ok = main.CurMenu().(Menu)
@@ -443,8 +452,10 @@ func (p *Player) PlaySong(song structs.Song, direction PlayDirection) {
 		}
 		switch direction {
 		case DurationPrev:
+			slog.Debug("(*Player).PlaySong 切换上一首")
 			p.PreviousSong(false)
 		case DurationNext:
+			slog.Debug("(*Player).PlaySong 切换下一首")
 			p.NextSong(false)
 		}
 		return
@@ -474,6 +485,7 @@ func (p *Player) PlaySong(song structs.Song, direction PlayDirection) {
 }
 
 func (p *Player) StartPlay() {
+	slog.Debug("(*Player).StartPlay", slog.Any("len", fmt.Sprintf("Playlist: %d, CurSongIndex: %d", len(p.Playlist()), p.CurSongIndex())))
 	if len(p.Playlist()) <= p.CurSongIndex() {
 		return
 	}
@@ -498,6 +510,7 @@ func (p *Player) CurSongIndex() int {
 
 func (p *Player) CurSong() structs.Song {
 	if len(p.Playlist()) <= p.CurSongIndex() {
+		slog.Debug("(*Player).CurSong", slog.Any("len", fmt.Sprintf("Playlist: %d, CurSongIndex: %d", len(p.Playlist()), p.CurSongIndex())))
 		return structs.Song{}
 	}
 	return p.Playlist()[p.CurSongIndex()]
@@ -505,6 +518,7 @@ func (p *Player) CurSong() structs.Song {
 
 // NextSong 下一曲
 func (p *Player) NextSong(manual bool) {
+	slog.Debug("(*Player).NextSong 播放下一首", slog.Any("manual", manual))
 	index := p.CurSongIndex()
 	playlistLen := len(p.Playlist())
 	if playlistLen == 0 || index >= playlistLen-1 {
@@ -565,6 +579,7 @@ func (p *Player) Seek(duration time.Duration) {
 
 // SetMode 设置播放模式
 func (p *Player) SetMode(playMode types.Mode) {
+	slog.Debug(fmt.Sprintf("(*Player).SetMode 切换播放模式 %v -> %v", p.lastMode, playMode))
 	if p.lastMode != p.netease.player.Mode() {
 		p.lastMode = p.netease.player.Mode()
 	}
@@ -788,6 +803,7 @@ func (p *Player) SetVolume(volume int) {
 }
 
 func (p *Player) handleControlSignal(signal CtrlSignal) {
+	slog.Debug("处理控制信号", slog.Any("ControlSignal", signal))
 	switch signal.Type {
 	case CtrlPaused:
 		p.Pause()
