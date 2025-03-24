@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"log/slog"
 
 	"github.com/anhoder/foxful-cli/util"
 	neteaseutil "github.com/go-musicfox/netease-music/util"
@@ -12,6 +13,7 @@ import (
 	"github.com/go-musicfox/go-musicfox/internal/runtime"
 	"github.com/go-musicfox/go-musicfox/internal/types"
 	"github.com/go-musicfox/go-musicfox/utils/filex"
+	"github.com/go-musicfox/go-musicfox/utils/slogx"
 	_ "github.com/go-musicfox/go-musicfox/utils/slogx"
 )
 
@@ -33,6 +35,10 @@ func musicfox() {
 
 	// 加载config
 	filex.LoadIniConfig()
+
+	if configs.ConfigRegistry.Main.Debug {
+		slogx.LevelVar().Set(slog.LevelDebug)
+	}
 
 	util.PrimaryColor = configs.ConfigRegistry.Main.PrimaryColor
 	var (
