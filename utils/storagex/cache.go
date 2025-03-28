@@ -5,7 +5,6 @@ import (
 	"io"
 	"log/slog"
 	"os"
-	"path"
 	"path/filepath"
 	"runtime"
 	"strconv"
@@ -13,6 +12,7 @@ import (
 
 	"github.com/buger/jsonparser"
 	"github.com/go-musicfox/netease-music/service"
+	"github.com/h2non/filetype"
 	"github.com/pkg/errors"
 
 	"github.com/go-musicfox/go-musicfox/internal/configs"
@@ -22,27 +22,34 @@ import (
 	"github.com/go-musicfox/go-musicfox/utils/mathx"
 )
 
-func tryFindCache(songId int64) (fpath string) {
+func tryFindCache(songId int64) (fpath, musicType string, ok bool) {
 	cacheDir := app.CacheDir()
 	if !filex.FileOrDirExists(cacheDir) {
-		if configs.ConfigRegistry.Main.CacheLimit != 0 {
-			_ = os.MkdirAll(cacheDir, os.ModePerm)
-		}
-		return
+		_ = os.MkdirAll(cacheDir, os.ModePerm)
 	}
-	// TODO: refactor this, read subdir to to improve performance
-	files, err := os.ReadDir(cacheDir)
-	if err != nil || len(files) == 0 {
-		return
-	}
+
 	prior := priority[configs.ConfigRegistry.Main.PlayerSongLevel]
-	for i := len(files) - 1; i >= 0; i-- {
-		file := files[i]
-		if strings.HasPrefix(file.Name(), strconv.FormatInt(songId, 10)) && !strings.HasSuffix(file.Name(), "-tmp") && file.Name() >= fmt.Sprintf("%d-%d", songId, prior) {
-			fpath = filepath.Join(cacheDir, file.Name())
-			return
+	fileName := fmt.Sprintf("%d-%d", songId, prior)
+
+	fpath = filepath.Join(cacheDir, fileName)
+
+	info, err := os.Stat(fpath)
+
+	// TODO: 尝试删除非音频、非文件内容
+	if info != nil && err == nil && info.Mode().IsRegular() {
+		ok = true
+		kind, err := filetype.MatchFile(fpath)
+		slog.Info(fmt.Sprintf("kind: %v", kind))
+		if err != nil {
+			slog.Error("获取缓存文件类型错误")
+		}
+		musicType = kind.Extension
+		if musicType == filetype.Unknown.Extension || kind.MIME.Type != "audio" {
+			musicType = ""
+			ok = false
 		}
 	}
+	slog.Info(fmt.Sprintf("fpath: %v, musicType: %v, ok: %v", fpath, musicType, ok))
 	return
 }
 
@@ -55,12 +62,10 @@ func CopyCachedSong(song structs.Song) error {
 	if !filex.FileOrDirExists(cacheDir) {
 		_ = os.MkdirAll(cacheDir, os.ModePerm)
 	}
-	oldFilename := tryFindCache(song.Id)
-	if oldFilename == "" {
+	oldFilename, musicType, ok := tryFindCache(song.Id)
+	if !ok {
 		return errors.New("cache file not exists")
 	}
-	split := strings.Split(path.Base(oldFilename), ".")
-	musicType := split[len(split)-1]
 	filename := fmt.Sprintf("%s-%s.%s", song.Name, song.ArtistName(), musicType)
 	// Windows Linux 均不允许文件名中出现 / \ 替换为 _
 	filename = strings.ReplaceAll(filename, "/", "_")
@@ -82,20 +87,17 @@ func CopyCachedSong(song structs.Song) error {
 	return nil
 }
 
-func GetCacheURL(songID int64) (fpath, musicType string) {
-	fpath = tryFindCache(songID)
-	if fpath == "" {
-		return
-	}
-	split := strings.Split(path.Base(fpath), ".")
-	musicType = split[len(split)-1]
+func GetCacheURL(songID int64) (fpath, musicType string, ok bool) {
+	fpath, musicType, ok = tryFindCache(songID)
 	fpath = "file://" + fpath
 	return
 }
 
 func PlayableURLSong(song structs.Song) (url, musicType string, err error) {
 	if configs.ConfigRegistry.Main.CacheLimit != 0 {
-		if url, musicType = GetCacheURL(song.Id); url != "" {
+		var ok bool
+		if url, musicType, ok = GetCacheURL(song.Id); ok {
+			slog.Info(fmt.Sprintf("使用缓存文件 fpath: %v, type: %v", url, musicType))
 			return
 		}
 	}
@@ -149,7 +151,7 @@ func PlayableURLSong(song structs.Song) (url, musicType string, err error) {
 	}
 	err = nil
 	if configs.ConfigRegistry.Main.CacheLimit != 0 {
-		go CacheMusic(song, url, musicType, urlService.Level)
+		go CacheMusic(song, url, urlService.Level)
 	}
 	return
 }

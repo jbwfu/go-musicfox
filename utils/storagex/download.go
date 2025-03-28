@@ -128,7 +128,7 @@ func DownloadMusic(song structs.Song) {
 		GroupId: types.GroupID,
 	})
 
-	if fpath := tryFindCache(song.Id); fpath != "" {
+	if _, _, ok := tryFindCache(song.Id); ok {
 		err = CopyCachedSong(song)
 	} else {
 		err = downloadMusic(url, musicType, song, downloadDir)
@@ -167,7 +167,7 @@ var priority = map[service.SongQualityLevel]int{
 	service.Hires:    5,
 }
 
-func CacheMusic(song structs.Song, url string, musicType string, quality service.SongQualityLevel) {
+func CacheMusic(song structs.Song, url string, quality service.SongQualityLevel) {
 	errHandler := func(errs ...error) {
 		slog.Error("缓存歌曲失败", slog.Any("error", errs))
 	}
@@ -181,7 +181,7 @@ func CacheMusic(song structs.Song, url string, musicType string, quality service
 	if configs.ConfigRegistry.Main.CacheLimit != -1 && size > configs.ConfigRegistry.Main.CacheLimit*1024*1024 {
 		return
 	}
-	filename := fmt.Sprintf("%d-%d.%s", song.Id, priority[quality], musicType)
+	filename := fmt.Sprintf("%d-%d", song.Id, priority[quality])
 	err = DownloadFile(url, filename, cacheDir)
 	if err != nil {
 		errHandler(err)
