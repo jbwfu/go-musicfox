@@ -11,6 +11,7 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"text/template"
 	"time"
 
@@ -167,7 +168,15 @@ var priority = map[service.SongQualityLevel]int{
 	service.Hires:    5,
 }
 
+var caching atomic.Bool
+
+func IsCaching() bool {
+	return caching.Load()
+}
+
 func CacheMusic(song structs.Song, url string, quality service.SongQualityLevel) {
+	caching.Store(true)
+	defer caching.Store(false)
 	errHandler := func(errs ...error) {
 		slog.Error("缓存歌曲失败", slog.Any("error", errs))
 	}

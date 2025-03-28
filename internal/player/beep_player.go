@@ -2,11 +2,10 @@ package player
 
 import (
 	"context"
-	"io"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
-	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -17,11 +16,10 @@ import (
 
 	"github.com/go-musicfox/go-musicfox/internal/configs"
 	"github.com/go-musicfox/go-musicfox/internal/types"
-	"github.com/go-musicfox/go-musicfox/utils/app"
 	"github.com/go-musicfox/go-musicfox/utils/errorx"
-	"github.com/go-musicfox/go-musicfox/utils/filex"
 	"github.com/go-musicfox/go-musicfox/utils/iox"
 	"github.com/go-musicfox/go-musicfox/utils/slogx"
+	"github.com/go-musicfox/go-musicfox/utils/storagex"
 	"github.com/go-musicfox/go-musicfox/utils/timex"
 )
 
@@ -81,17 +79,20 @@ func NewBeepPlayer() *beepPlayer {
 func (p *beepPlayer) listen() {
 	var (
 		done       = make(chan struct{})
-		resp       *http.Response
-		reader     io.ReadCloser
 		err        error
 		ctx        context.Context
 		cancel     context.CancelFunc
-		prevSongId int64
 		doneHandle = func() {
 			select {
 			case done <- struct{}{}:
 			case <-p.close:
 			}
+		}
+		waitBytes = func() int {
+			if p.curMusic.Type != Flac {
+				return 512
+			}
+			return 512 * 4
 		}
 	)
 
@@ -99,7 +100,6 @@ func (p *beepPlayer) listen() {
 		panic(err)
 	}
 
-	cacheFile := filepath.Join(app.DataRootDir(), "music_cache")
 	for {
 		select {
 		case <-p.close:
@@ -112,99 +112,73 @@ func (p *beepPlayer) listen() {
 		case p.curMusic = <-p.musicChan:
 			p.l.Lock()
 			p.pausedNoLock()
-			if p.timer != nil {
-				p.timer.SetPassed(0)
-			}
 			// 清理上一轮
 			if cancel != nil {
 				cancel()
 			}
 			p.reset()
+
 			ctx, cancel = context.WithCancel(context.Background())
 
-			if prevSongId != p.curMusic.Id || !filex.FileOrDirExists(cacheFile) {
-				// FIXME: 先这样处理，暂时没想到更好的办法
-				if p.cacheReader, err = os.OpenFile(cacheFile, os.O_CREATE|os.O_TRUNC|os.O_RDONLY, 0666); err != nil {
-					panic(err)
-				}
-				if p.cacheWriter, err = os.OpenFile(cacheFile, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0666); err != nil {
+			if strings.HasPrefix(p.curMusic.URL, "file://") {
+				p.cacheDownloaded = true
+			} else {
+				p.curMusic.URL, _, _ = storagex.GetCacheURL(p.curMusic.Id)
+			}
+			cacheFile := strings.TrimPrefix(p.curMusic.URL, "file://")
+
+			// FIXME: 边听边存不可用
+			// 由于下载使用了临时文件，此处实际仍然是等待完整下载
+			if p.awaitCache(ctx, cacheFile, true) {
+				if p.cacheReader, err = os.OpenFile(cacheFile, os.O_RDONLY, 0666); err != nil {
 					panic(err)
 				}
 
-				if strings.HasPrefix(p.curMusic.URL, "file://") {
-					reader, err = os.Open(strings.TrimPrefix(p.curMusic.URL, "file://"))
-					if err != nil {
-						panic(err)
-					}
-				} else if resp, err = p.httpClient.Get(p.curMusic.URL); err != nil {
-					p.stopNoLock()
-					goto nextLoop
-				} else {
-					reader = resp.Body
-				}
+			} else {
+				p.stopNoLock()
+				goto nextLoop
+			}
 
+			if !p.cacheDownloaded {
 				// 边下载边播放
-				go func(ctx context.Context, cacheWFile *os.File, read io.ReadCloser) {
+				go func(ctx context.Context) {
 					defer func() {
 						if errorx.Recover(true) {
 							p.Stop()
 						}
 					}()
-					_, _ = iox.CopyClose(ctx, cacheWFile, read)
-					p.cacheDownloaded = true
-					p.l.Lock()
-					defer p.l.Unlock()
-					if p.curStreamer == nil {
-						// nil说明外层解析还没开始或解析失败，这里直接退出
+
+					if !p.awaitCache(ctx, cacheFile, false) {
 						return
 					}
-					// 除了MP3格式，其他格式无需重载
-					if p.curMusic.Type == Mp3 && configs.ConfigRegistry.Player.BeepMp3Decoder != types.BeepMiniMp3Decoder {
-						// 需再开一次文件，保证其指针变化，否则将概率导致 p.ctrl.Streamer = beep.Seq(……) 直接停止播放
-						cacheReader, _ := os.OpenFile(cacheFile, os.O_RDONLY, 0666)
-						// 使用新的文件后需手动Seek到上次播放处
-						lastStreamer := p.curStreamer
-						defer func() { _ = lastStreamer.Close() }()
-						pos := lastStreamer.Position()
-						if p.curStreamer, p.curFormat, err = DecodeSong(p.curMusic.Type, cacheReader); err != nil {
-							p.stopNoLock()
-							return
-						}
-						if pos >= p.curStreamer.Len() {
-							pos = p.curStreamer.Len() - 1
-						}
-						if pos < 0 {
-							pos = 1
-						}
-						_ = p.curStreamer.Seek(pos)
-						p.ctrl.Streamer = beep.Seq(p.resampleStreamer(p.curFormat.SampleRate), beep.Callback(doneHandle))
-					}
-				}(ctx, p.cacheWriter, reader)
 
-				N := 512
-				if p.curMusic.Type == Flac {
-					N *= 4
-				}
-				if err = iox.WaitForNBytes(p.cacheReader, N, time.Millisecond*100, 50); err != nil {
+					if _, err := os.Stat(cacheFile); os.IsNotExist(err) {
+						return
+					}
+
+					p.l.Lock()
+					defer p.l.Unlock()
+
+					// 需再开一次文件，保证其指针变化，否则将概率导致 p.ctrl.Streamer = beep.Seq(……) 直接停止播放
+					if !p.loadOrReload(doneHandle) {
+						return
+					}
+					p.cacheDownloaded = true
+				}(ctx)
+
+				if err = iox.WaitForNBytes(p.cacheReader, waitBytes(), time.Millisecond*100, 50); err != nil {
 					slog.Error("WaitForNBytes err", slogx.Error(err))
 					p.stopNoLock()
 					goto nextLoop
 				}
-			} else {
-				// 单曲循环以及歌单只有一首歌时不再请求网络
-				if p.cacheReader, err = os.OpenFile(cacheFile, os.O_RDONLY, 0666); err != nil {
-					panic(err)
-				}
 			}
 
-			if p.curStreamer, p.curFormat, err = DecodeSong(p.curMusic.Type, p.cacheReader); err != nil {
-				p.stopNoLock()
+			if !p.loadOrReload(doneHandle) {
 				goto nextLoop
 			}
 
 			slog.Info("current song sample rate", slog.Int("sample_rate", int(p.curFormat.SampleRate)))
 
-			p.ctrl.Streamer = beep.Seq(p.resampleStreamer(p.curFormat.SampleRate), beep.Callback(doneHandle))
 			p.volume.Streamer = p.ctrl
 			speaker.Play(p.volume)
 
@@ -223,12 +197,75 @@ func (p *beepPlayer) listen() {
 				},
 			})
 			p.resumeNoLock()
-			prevSongId = p.curMusic.Id
 
 		nextLoop:
 			p.l.Unlock()
 		}
 	}
+}
+
+// onlystart 为 true 时检测缓存文件的开始状态， false 时检测完成状态
+func (p *beepPlayer) awaitCache(ctx context.Context, file string, onlystart bool) bool {
+	ticker := time.NewTicker(100 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return false
+		case <-ticker.C:
+			if storagex.IsCaching() {
+				if !onlystart {
+					continue // 等待缓存操作结束
+				}
+				if _, err := os.Stat(file); err == nil {
+					return true // 缓存文件已存在，继续后续操作
+				}
+				continue
+			}
+			if _, err := os.Stat(file); err == nil {
+				return true
+			}
+			return false
+		}
+	}
+}
+
+// 加载或重载音乐文件至 beep
+func (p *beepPlayer) loadOrReload(callback func()) bool {
+	var (
+		reader *os.File
+		pos    int
+		err    error
+	)
+
+	if p.curStreamer == nil {
+		reader = p.cacheReader
+		pos = 0
+
+	} else {
+		// 除了MP3格式，其他格式无需重载
+		if p.curMusic.Type == Mp3 && configs.ConfigRegistry.Player.BeepMp3Decoder != types.BeepMiniMp3Decoder {
+			return true
+		}
+		reader, _ = os.OpenFile(strings.TrimPrefix(p.curMusic.URL, "file://"), os.O_RDONLY, 0666)
+
+		lastStreamer := p.curStreamer
+		defer func() { _ = lastStreamer.Close() }()
+		pos = lastStreamer.Position()
+	}
+
+	if p.curStreamer, p.curFormat, err = DecodeSong(p.curMusic.Type, reader); err != nil {
+		slog.Error(fmt.Sprintf("解码错误：%v", err))
+		p.stopNoLock()
+		return false
+	}
+	if pos >= p.curStreamer.Len() && p.curStreamer.Len() != 0 {
+		pos = p.curStreamer.Len() - 1
+	}
+	_ = p.curStreamer.Seek(pos)
+	p.ctrl.Streamer = beep.Seq(p.resampleStreamer(p.curFormat.SampleRate), beep.Callback(callback))
+
+	return true
 }
 
 // Play 播放音乐
@@ -429,6 +466,7 @@ func (p *beepPlayer) Close() {
 func (p *beepPlayer) reset() {
 	// 关闭旧计时器
 	if p.timer != nil {
+		p.timer.SetPassed(0)
 		p.timer.Stop()
 	}
 	if p.cacheReader != nil {
