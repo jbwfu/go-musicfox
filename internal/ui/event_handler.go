@@ -59,6 +59,7 @@ const (
 	OperateTypePageDown                           = "pageDown"
 	OperateTypePageUp                             = "pageUp"
 	OperateTypeDownloadLrc                        = "downloadLrc"
+	OperateTypeZzzzzzzzz                          = "zzzzzzzzzzzzzzzzzzzzzzz"
 )
 
 type EventHandler struct {
@@ -141,6 +142,7 @@ var keyOperateMapping = map[string]OperateType{
 	"ctrl+d":    OperateTypePageDown,
 	"ctrl+u":    OperateTypePageUp,
 	"ctrl+l":    OperateTypeDownloadLrc,
+	"z":         OperateTypeZzzzzzzzz,
 }
 
 func (h *EventHandler) KeyMsgHandle(msg tea.KeyMsg, _ *model.App) (bool, model.Page, tea.Cmd) {
@@ -301,6 +303,8 @@ func (h *EventHandler) handle(ot OperateType) (bool, model.Page, tea.Cmd) {
 		}
 	case OperateTypeDownloadLrc:
 		DownLoadLrc(h.netease)
+	case OperateTypeZzzzzzzzz:
+		action(h.netease, false)
 	default:
 		return false, nil, nil
 	}
