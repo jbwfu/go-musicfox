@@ -479,6 +479,8 @@ $ musicfox
 | `openSelectedItemInWeb`             | 网页打开选中歌曲/专辑...      | `O`                                             |
 | `collectSelectedPlaylist`           | 收藏选中歌单                  | `;`, `:`, `：`, `；`                        |
 | `discollectSelectedPlaylist`        | 取消收藏选中歌单              | `'`, `"`                                        |
+| `actionOfSelected`                  | 对于选中项或当前播放的操作       | `m`                                          |
+| `actionOfPlayingSong`               | 对于当前播放的操作             | `M`                                          |
 
 注意：
 - 多个按键请以英文逗号`,`分隔，每个键无需引号（不支持）
