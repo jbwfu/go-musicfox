@@ -87,6 +87,7 @@ const (
 	OpAlbumOfPlayingSong
 	OpArtistOfPlayingSong
 	OpOpenPlayingSongInWeb
+	OpOpenSimiSongsOfPlayingSong
 	OpLikeSelectedSong
 	OpDislikeSelectedSong
 	OpTrashSelectedSong
@@ -98,10 +99,13 @@ const (
 	OpOpenSelectedItemInWeb
 	OpCollectSelectedPlaylist
 	OpDiscollectSelectedPlaylist
+	OpOpenSimiSongsOfSelectedSong
 
 	OpActionOfSelected
 	OpActionOfPlayingSong
 )
+
+var opNameToOperateMap = make(map[string]OperateType)
 
 // 操作信息
 var keyBindingsRegistry = map[OperateType]OperationInfo{
@@ -148,6 +152,7 @@ var keyBindingsRegistry = map[OperateType]OperationInfo{
 	OpAlbumOfPlayingSong:             {name: "openAlbumOfPlayingSong", desc: "播放中歌曲的所属专辑"},
 	OpArtistOfPlayingSong:            {name: "openArtistOfPlayingSong", desc: "播放中歌曲的所属歌手"},
 	OpOpenPlayingSongInWeb:           {name: "openPlayingSongInWeb", desc: "网页打开播放中歌曲"},
+	OpOpenSimiSongsOfPlayingSong:     {name: "simiSongsOfPlayingSong", desc: "与播放中歌曲相似的歌曲"},
 	OpLikeSelectedSong:               {name: "likeSelectedSong", desc: "喜欢选中歌曲"},
 	OpDislikeSelectedSong:            {name: "dislikeSelectedSong", desc: "取消喜欢选中歌曲"},
 	OpTrashSelectedSong:              {name: "trashSelectedSong", desc: "标记选中歌曲为不喜欢"},
@@ -159,6 +164,7 @@ var keyBindingsRegistry = map[OperateType]OperationInfo{
 	OpOpenSelectedItemInWeb:          {name: "openSelectedItemInWeb", desc: "网页打开选中歌曲/专辑..."},
 	OpCollectSelectedPlaylist:        {name: "collectSelectedPlaylist", desc: "收藏选中歌单"},
 	OpDiscollectSelectedPlaylist:     {name: "discollectSelectedPlaylist", desc: "取消收藏选中歌单"},
+	OpOpenSimiSongsOfSelectedSong:    {name: "simiSongsOfSelectedSong", desc: "与选中歌曲相似的歌曲"},
 
 	OpActionOfSelected:    {name: "actionOfSelected", desc: "对于选中项或当前播放的操作"},
 	OpActionOfPlayingSong: {name: "actionOfPlayingSong", desc: "对于当前播放的操作"},
@@ -212,6 +218,7 @@ var defaultOtherOperateToKeys = map[OperateType][]string{
 	OpAlbumOfPlayingSong:             {"a"},
 	OpArtistOfPlayingSong:            {"s"},
 	OpOpenPlayingSongInWeb:           {"o"},
+	OpOpenSimiSongsOfPlayingSong:     {"f"},
 	OpLikeSelectedSong:               {"<", "〈", "＜", "《", "«"},
 	OpDislikeSelectedSong:            {">", "〉", "＞", "》", "»"},
 	OpTrashSelectedSong:              {"T"},
@@ -223,6 +230,7 @@ var defaultOtherOperateToKeys = map[OperateType][]string{
 	OpOpenSelectedItemInWeb:          {"O"},
 	OpCollectSelectedPlaylist:        {";", ":", "：", "；"},
 	OpDiscollectSelectedPlaylist:     {"'", "\""},
+	OpOpenSimiSongsOfSelectedSong:    {"F"},
 
 	OpActionOfSelected:    {"m"},
 	OpActionOfPlayingSong: {"M"},
@@ -351,10 +359,9 @@ func BuildEffectiveBindings(userKeyBindings map[string]string, useDefault bool) 
 	}
 
 	// 预处理用户配置，移除不存在操作
-	nameToOperate := buildNameToOperateMap()
 	preprocessing := make(map[OperateType][]string)
 	for opStr, keysStr := range userKeyBindings {
-		op, ok := nameToOperate[opStr]
+		op, ok := GetOperationFromName(opStr)
 		if !ok {
 			slog.Warn(fmt.Sprintf("配置文件 [keybindings] 中发现未知操作 '%s'，已忽略", opStr))
 			continue
@@ -471,13 +478,10 @@ func BuildKeyToOperateTypeMap(effectiveBindings map[OperateType][]string) map[st
 	return keyMap
 }
 
-// GetAllOperations 获取所有操作
-func GetAllOperations() map[OperateType]struct{} {
-	maps := make(map[OperateType]struct{}, len(keyBindingsRegistry))
-	for op := range keyBindingsRegistry {
-		maps[op] = struct{}{}
-	}
-	return maps
+// 使用操作名称查询 OperateType
+func GetOperationFromName(opName string) (OperateType, bool) {
+	op, ok := opNameToOperateMap[opName]
+	return op, ok
 }
 
 // GetHardCordKeys 获取被硬编码在 foxful-cli 的按键
@@ -491,17 +495,6 @@ func getHardCordKeys() map[string]struct{} {
 			if k != "" {
 				maps[k] = struct{}{}
 			}
-		}
-	}
-	return maps
-}
-
-// BuildNameToOperateMap 创建一个操作名称到 OperateType 的映射
-func buildNameToOperateMap() map[string]OperateType {
-	maps := make(map[string]OperateType, len(keyBindingsRegistry))
-	for op := range keyBindingsRegistry {
-		if op.Name() != "" {
-			maps[op.Name()] = op
 		}
 	}
 	return maps
@@ -528,4 +521,15 @@ func splitKeys(s string) []string {
 		trimmedKeys = append(trimmedKeys, trimmedKey)
 	}
 	return trimmedKeys
+}
+
+// 创建一个操作名称到 OperateType 的映射
+func init() {
+	maps := make(map[string]OperateType, len(keyBindingsRegistry))
+	for op := range keyBindingsRegistry {
+		if op.Name() != "" {
+			maps[op.Name()] = op
+		}
+	}
+	opNameToOperateMap = maps
 }

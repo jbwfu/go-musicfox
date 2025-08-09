@@ -1,7 +1,8 @@
 package ui
 
 import (
-	"log"
+	"fmt"
+	"log/slog"
 	"slices"
 	"time"
 
@@ -25,13 +26,11 @@ func NewEventHandler(netease *Netease) *EventHandler {
 		netease:         netease,
 		keyToOperateMap: keybindings.BuildKeyToOperateTypeMap(configs.ConfigRegistry.Keybindings),
 	}
-	log.Printf("事件处理器已初始化，加载了 %d 个有效按键绑定映射。\n", len(handler.keyToOperateMap))
+	slog.Info(fmt.Sprintf("事件处理器已初始化，加载了 %d 个有效按键绑定映射。", len(handler.keyToOperateMap)))
 	return handler
 }
 
 func (h *EventHandler) KeyMsgHandle(msg tea.KeyMsg, _ *model.App) (bool, model.Page, tea.Cmd) {
-	s := msg.String()
-	log.Default().Print(s)
 	if op, ok := h.keyToOperateMap[msg.String()]; ok {
 		stopPropagation, newPage, cmd := h.handle(op)
 		return stopPropagation, newPage, cmd
@@ -132,6 +131,12 @@ func (h *EventHandler) handle(op keybindings.OperateType) (bool, model.Page, tea
 	case keybindings.OpRemovePlayingFromUserPlaylist:
 		newPage := openAddSongToUserPlaylistMenu(h.netease, false, false)
 		return true, newPage, app.Tick(time.Nanosecond)
+	case keybindings.OpOpenSimiSongsOfPlayingSong:
+		// 与当前歌曲相似的歌曲
+		simiSongsOfPlayingSong(h.netease)
+	case keybindings.OpOpenSimiSongsOfSelectedSong:
+		// 与当前选中歌曲相似的歌曲
+		simiSongsOfSelectedSong(h.netease)
 	case keybindings.OpAlbumOfPlayingSong:
 		// 当前歌曲所属专辑
 		albumOfPlayingSong(h.netease)

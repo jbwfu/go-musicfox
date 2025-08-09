@@ -3,6 +3,8 @@ package ui
 import (
 	"encoding/json"
 	"log/slog"
+	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -10,9 +12,11 @@ import (
 	"time"
 
 	"github.com/anhoder/foxful-cli/model"
+	"github.com/buger/jsonparser"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/go-musicfox/netease-music/service"
 	"github.com/go-musicfox/netease-music/util"
+	"github.com/pkg/errors"
 	"github.com/telanflow/cookiejar"
 
 	"github.com/go-musicfox/go-musicfox/internal/automator"
@@ -82,6 +86,18 @@ func (n *Netease) InitHook(_ *model.App) {
 				n.user = &user
 			}
 		}
+
+		if n.user == nil && config.Main.NeteaseCookie != "" {
+			// 使用cookie登录
+			cookieJar.SetCookies(
+				errorx.Must1(url.Parse("https://music.163.com")),
+				errorx.Must1(http.ParseCookie(config.Main.NeteaseCookie)),
+			)
+			if err := n.LoginCallback(); err != nil {
+				slog.Warn("使用cookie登录失败", slogx.Error(err))
+			}
+		}
+
 		// 刷新界面用户名
 		n.MustMain().RefreshMenuTitle()
 
@@ -222,4 +238,38 @@ func (n *Netease) CloseHook(_ *model.App) {
 
 func (n *Netease) Player() *Player {
 	return n.player
+}
+
+func (n *Netease) LoginCallback() error {
+	code, resp := (&service.UserAccountService{}).AccountInfo()
+	if code != 200 {
+		return errors.Errorf("accountInfo code: %f, resp: %s", code, string(resp))
+	}
+
+	user, err := structs.NewUserFromJson(resp)
+	if err != nil {
+		return errors.WithMessagef(err, "parse user err, code: %f, resp: %s", code, string(resp))
+	}
+	n.user = &user
+
+	// 获取我喜欢的歌单
+	userPlaylists := service.UserPlaylistService{
+		Uid:    strconv.FormatInt(n.user.UserId, 10),
+		Limit:  strconv.Itoa(1),
+		Offset: strconv.Itoa(0),
+	}
+	_, response := userPlaylists.UserPlaylist()
+	n.user.MyLikePlaylistID, err = jsonparser.GetInt(response, "playlist", "[0]", "id")
+	if err != nil {
+		slog.Warn("获取歌单ID失败", slogx.Error(err), slog.String("response", string(response)))
+	}
+
+	// 写入本地数据库
+	table := storage.NewTable()
+	_ = table.SetByKVModel(storage.User{}, user)
+
+	// 更新like list
+	go likelist.RefreshLikeList(user.UserId)
+
+	return nil
 }
