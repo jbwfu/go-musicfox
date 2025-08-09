@@ -109,6 +109,9 @@ func (m *ActionMenu) selectSongAction() {
 		}, {
 			title: model.MenuItem{Title: "标记为不喜欢"},
 			page:  func() model.Page { return trashSelectedSong(m.netease) },
+		}, {
+			title: model.MenuItem{Title: "相似的歌曲"},
+			action:  func() { simiSongsOfSelectedSong(m.netease) },
 		},
 	}
 	if m.from == CurPlaylistKey { // 仅在当前播放界面生效
@@ -151,6 +154,9 @@ func (m *ActionMenu) curSongAction() {
 		}, {
 			title: model.MenuItem{Title: "标记为不喜欢"},
 			page:  func() model.Page { return trashPlayingSong(m.netease) },
+		}, {
+			title: model.MenuItem{Title: "相似的歌曲"},
+			action:  func() { simiSongsOfPlayingSong(m.netease) },
 		},
 	}
 }
