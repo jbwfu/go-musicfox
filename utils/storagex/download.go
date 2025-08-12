@@ -73,30 +73,43 @@ func DownloadFile(url, filename, dirname string) error {
 }
 
 var (
-	songNameTpl *template.Template
+	fileNameTpl *template.Template
 	tplInitd    sync.Once
 	reg         = regexp.MustCompile("[<>:\"/\\|?*\000]")
 )
 
-func downloadMusic(url, musicType string, song structs.Song, downloadDir string) error {
+// generateFilename 从模板生成文件名
+func generateFilename(song structs.Song, fileExt string) string {
 	tplInitd.Do(func() {
-		tpl := template.New("songName")
+		tpl := template.New("fileNameGenerator")
 		if configs.ConfigRegistry.Main.DownloadFileNameTpl != "" {
-			songNameTpl = template.Must(tpl.Parse(configs.ConfigRegistry.Main.DownloadFileNameTpl))
+			fileNameTpl = template.Must(tpl.Parse(configs.ConfigRegistry.Main.DownloadFileNameTpl))
 		} else {
-			songNameTpl = template.Must(tpl.Parse("{{.SongName}}-{{.ArtistName}}.{{.SongType}}"))
+			fileNameTpl = template.Must(tpl.Parse("{{.SongName}}-{{.ArtistName}}.{{.FileExt}}"))
 		}
 	})
+
+	_, musicType, err := PlayableURLSong(song)
+	if err != nil {
+			musicType = "unknow"
+	}
+
 	var filenameBuilder strings.Builder
-	_ = songNameTpl.Execute(&filenameBuilder, map[string]string{
+	_ = fileNameTpl.Execute(&filenameBuilder, map[string]string{
 		"SongName":   song.Name,
 		"ArtistName": song.ArtistName(),
 		"SongType":   musicType,
+		"FileExt":    fileExt,
 	})
 	filename := filenameBuilder.String()
 
 	// Windows Linux 均不允许文件名中出现 / \ 替换为 _
 	filename = reg.ReplaceAllString(filename, "_")
+	return filename
+}
+
+func downloadMusic(url, musicType string, song structs.Song, downloadDir string) error {
+	filename := generateFilename(song, musicType)
 	err := DownloadFile(url, filename, downloadDir)
 	if err != nil {
 		return err
@@ -174,8 +187,8 @@ func DownLoadLrc(song structs.Song) {
 		return
 	}
 
-	filename := song.Name
-	savepath := filepath.Join(app.DownloadLyricDir(), filename+".lrc")
+	filename := generateFilename(song, "lrc")
+	savepath := filepath.Join(app.DownloadLyricDir(), filename)
 
 	err = os.WriteFile(savepath, []byte(lrc), 0644)
 	if err != nil {
