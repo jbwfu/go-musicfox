@@ -13,28 +13,37 @@ type Playlist struct {
 }
 
 // NewPlaylistFromJson 获取歌单信息
-func NewPlaylistFromJson(json []byte) (Playlist, error) {
+func NewPlaylistFromJson(json []byte, keys ...string) (Playlist, error) {
 	var playlist Playlist
 	if len(json) == 0 {
 		return playlist, errors.New("json is empty")
 	}
 
-	id, err := jsonparser.GetInt(json, "id")
+			targetData := json
+	if len(keys) > 0 {
+		extractedData, _, _, err := jsonparser.Get(json, keys...)
+		if err != nil {
+			return playlist, err
+		}
+		targetData = extractedData
+	}
+
+	id, err := jsonparser.GetInt(targetData, "id")
 	if err != nil {
 		return playlist, err
 	}
 	playlist.Id = id
 
-	if name, err := jsonparser.GetString(json, "name"); err == nil {
+	if name, err := jsonparser.GetString(targetData, "name"); err == nil {
 		playlist.Name = name
 	}
 
 	// privacy as int
-	if privacy, err := jsonparser.GetInt(json, "privacy"); err == nil {
+	if privacy, err := jsonparser.GetInt(targetData, "privacy"); err == nil {
 		playlist.Privacy = (privacy != 0)
 	}
 
-	if dj, err := NewUserFromJson(json, "creator"); err == nil {
+	if dj, err := NewUserFromJson(targetData, "creator"); err == nil {
 		playlist.Creator = dj
 	}
 

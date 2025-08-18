@@ -18,6 +18,8 @@ type Song struct {
 	DjRadioEpisodeId int64   `json:"djRadioEpisodeId"` // 若为播客，则非 0
 	DjRadio          DjRadio `json:"djRadio"`          // 播客，电台使用
 	UnMatched        bool    `json:"unMatched"`        // 云盘内资源匹配状态
+
+	Source *SourceInfo `json:"source,omitempty"`
 }
 
 func (s Song) ArtistName() string {
@@ -183,7 +185,8 @@ func NewSongFromDjRadioProgramJson(json []byte, keys ...string) (Song, error) {
 	}
 
 	if radio, err := NewDjRadioFromJson(targetData, "radio"); err == nil {
-		song.DjRadio = radio
+			song.DjRadio = radio
+			song.Source = NewSourceInfo(radio)
 	}
 	if dj, err := NewUserFromJson(targetData, "dj"); err == nil {
 		song.DjRadio.Dj = dj

@@ -57,8 +57,10 @@ func ReplaceSpecialStr(str string) string {
 
 // GetDailySongs 获取每日歌曲列表
 func GetDailySongs(data []byte) (list []structs.Song) {
+	source := &structs.SourceInfo{Type: structs.SourceDailyRecommend}
 	_, _ = jsonparser.ArrayEach(data, func(value []byte, dataType jsonparser.ValueType, offset int, err error) {
 		if song, err := structs.NewSongFromShortNameSongsJson(value); err == nil {
+			song.Source = source
 			list = append(list, song)
 		}
 
@@ -67,7 +69,7 @@ func GetDailySongs(data []byte) (list []structs.Song) {
 	return
 }
 
-// GetRecentSongs 获取每日歌曲列表
+// GetRecentSongs 获取最近播放歌曲列表
 func GetRecentSongs(data []byte) (list []structs.Song) {
 	_, _ = jsonparser.ArrayEach(data, func(value []byte, dataType jsonparser.ValueType, offset int, _ error) {
 		if t, _ := jsonparser.GetString(value, "resourceType"); t != "SONG" {
@@ -103,8 +105,11 @@ func GetDailyPlaylists(data []byte) (list []structs.Playlist) {
 
 // GetSongsOfPlaylist 获取播放列表的歌曲
 func GetSongsOfPlaylist(data []byte) (list []structs.Song) {
+	playlist, _ := structs.NewPlaylistFromJson(data, "playlist")
+	source := structs.NewSourceInfo(playlist)
 	_, _ = jsonparser.ArrayEach(data, func(value []byte, dataType jsonparser.ValueType, offset int, err error) {
 		if song, err := structs.NewSongFromShortNameSongsJson(value); err == nil {
+			song.Source = source
 			list = append(list, song)
 		}
 
@@ -115,8 +120,11 @@ func GetSongsOfPlaylist(data []byte) (list []structs.Song) {
 
 // GetSongsOfAlbum 获取专辑的歌曲
 func GetSongsOfAlbum(data []byte) (list []structs.Song) {
+	album, _ := structs.NewAlbumFromJson(data, "album")
+	source := structs.NewSourceInfo(album)
 	_, _ = jsonparser.ArrayEach(data, func(value []byte, dataType jsonparser.ValueType, offset int, err error) {
 		if song, err := structs.NewSongFromAlbumSongsJson(value); err == nil {
+			song.Source = source
 			list = append(list, song)
 		}
 
