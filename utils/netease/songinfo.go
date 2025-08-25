@@ -2,11 +2,14 @@ package netease
 
 import (
 	"errors"
+	"fmt"
 	"log/slog"
+	"net/url"
 	"strconv"
 	"strings"
 
 	"github.com/buger/jsonparser"
+	"github.com/go-musicfox/go-musicfox/utils/filex"
 	"github.com/go-musicfox/go-musicfox/utils/mathx"
 	"github.com/go-musicfox/netease-music/service"
 )
@@ -39,6 +42,7 @@ func FetchPlayableInfo(songID int64, quality service.SongQualityLevel) (Playable
 		return PlayableInfo{}, errors.New(string(response))
 	}
 
+	filex.WriteFile(response, "/tmp/xxx/song1.json")
 	var (
 		err1, err2    error
 		freeTrialInfo jsonparser.ValueType
@@ -72,10 +76,46 @@ func FetchPlayableInfo(songID int64, quality service.SongQualityLevel) (Playable
 		musicType = "mp3"
 	}
 
+	ok, err := ShouldInterceptURL(url, bannedLinkFeatures)
+
+	if err != nil {
+		return PlayableInfo{}, err
+	}
+	if ok {
+		return PlayableInfo{}, errors.New(fmt.Sprintf("检测的无效的播放链接: %v", url))
+	}
+
 	return PlayableInfo{
 		URL:       url,
 		MusicType: musicType,
 		Size:      size,
 		Quality:   quality,
 	}, nil
+}
+
+var bannedLinkFeatures = []string{
+	"/resource/n2/73/84/3759149332.mp3",
+}
+
+// ShouldInterceptURL 检查给定的 URL 是否匹配任何一个不想要的特征。
+// urlToCheck: 需要被检测的链接字符串。
+// unwantedFeatures: 一个包含所有不想要的 URL 路径后缀的列表。
+//
+// 返回值:
+//   - bool: 如果链接应该被拦截，则为 true。
+//   - error: 如果 urlToCheck 不是一个有效的 URL，则返回错误。
+func ShouldInterceptURL(urlToCheck string, unwantedFeatures []string) (bool, error) {
+	parsedURL, err := url.Parse(urlToCheck)
+	if err != nil {
+		return false, fmt.Errorf("无法解析 URL: %w", err)
+	}
+
+	for _, feature := range unwantedFeatures {
+			if strings.HasSuffix(parsedURL.Path, feature) {
+					slog.Warn("无效的酷我链接，已跳过播放")
+			return true, nil
+		}
+	}
+
+	return false, nil
 }
