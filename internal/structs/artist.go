@@ -29,3 +29,19 @@ func NewArtist(json []byte) (Artist, error) {
 
 	return artist, nil
 }
+
+// NewArtists 从 josn 数组获取所有艺术家
+func NewArtists(json []byte, keys ...string) ([]Artist, error) {
+	var artists []Artist
+	if len(json) == 0 {
+		return artists, errors.New("json is empty")
+	}
+	_, err := jsonparser.ArrayEach(json, func(value []byte, dataType jsonparser.ValueType, offset int, _ error) {
+		artist, err := NewArtist(value)
+
+		if err == nil {
+			artists = append(artists, artist)
+		}
+	}, keys...)
+	return artists, err
+}
