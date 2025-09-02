@@ -19,7 +19,7 @@ import (
 
 	"github.com/go-musicfox/go-musicfox/internal/configs"
 	"github.com/go-musicfox/go-musicfox/internal/lyric"
-	"github.com/go-musicfox/go-musicfox/internal/player"
+	"github.com/go-musicfox/go-musicfox/internal/pkg/player"
 	"github.com/go-musicfox/go-musicfox/internal/playlist"
 	control "github.com/go-musicfox/go-musicfox/internal/remote_control"
 	"github.com/go-musicfox/go-musicfox/internal/reporter"
