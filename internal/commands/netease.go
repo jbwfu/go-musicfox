@@ -10,6 +10,7 @@ import (
 	"github.com/gookit/gcli/v2"
 	"github.com/mattn/go-runewidth"
 
+	"github.com/go-musicfox/go-musicfox/internal/app"
 	"github.com/go-musicfox/go-musicfox/internal/configs"
 	"github.com/go-musicfox/go-musicfox/internal/storage"
 	"github.com/go-musicfox/go-musicfox/internal/types"
@@ -51,10 +52,13 @@ func runPlayer(_ *gcli.Command, _ []string) error {
 	// DBManager 初始化
 	storage.DBManager = new(storage.LocalDBManager)
 
-	var (
-		netease      = ui.NewNetease(model.NewApp(opts))
-		eventHandler = ui.NewEventHandler(netease)
-	)
+	eventChan := make(chan app.Event, 64)
+	// playerSvc := player.NewService(eventChan)
+	// appCore := app.New()
+
+	netease := ui.NewNetease(model.NewApp(opts), eventChan)
+	eventHandler := ui.NewEventHandler(netease)
+
 	eventHandler.RegisterGlobalHotkeys(opts)
 	netease.With(
 		model.WithHook(netease.InitHook, netease.CloseHook),

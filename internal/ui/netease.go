@@ -2,6 +2,7 @@ package ui
 
 import (
 	"encoding/json"
+	"log"
 	"log/slog"
 	"net/http"
 	"net/url"
@@ -19,6 +20,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/telanflow/cookiejar"
 
+	"github.com/go-musicfox/go-musicfox/internal/app"
 	"github.com/go-musicfox/go-musicfox/internal/automator"
 	"github.com/go-musicfox/go-musicfox/internal/composer"
 	"github.com/go-musicfox/go-musicfox/internal/configs"
@@ -27,7 +29,7 @@ import (
 	"github.com/go-musicfox/go-musicfox/internal/structs"
 	"github.com/go-musicfox/go-musicfox/internal/track"
 	"github.com/go-musicfox/go-musicfox/internal/types"
-	"github.com/go-musicfox/go-musicfox/utils/app"
+	_app "github.com/go-musicfox/go-musicfox/utils/app"
 	"github.com/go-musicfox/go-musicfox/utils/errorx"
 	"github.com/go-musicfox/go-musicfox/utils/likelist"
 	"github.com/go-musicfox/go-musicfox/utils/notify"
@@ -46,15 +48,19 @@ type Netease struct {
 	player       *Player
 	shareSvc     *composer.ShareService
 	trackManager *track.Manager
+
+	// eventChan is the single source of truth for async events from the core.
+	eventChan <-chan app.Event
 }
 
-func NewNetease(app *model.App) *Netease {
+func NewNetease(app *model.App, eventChan <-chan app.Event) *Netease {
 	n := new(Netease)
 	n.lastfm = lastfm.NewClient()
 	n.player = NewPlayer(n)
 	n.login = NewLoginPage(n)
 	n.search = NewSearchPage(n)
 	n.App = app
+	n.eventChan = eventChan
 
 	n.shareSvc = composer.NewShareService()
 	n.shareSvc.RegisterTemplates(configs.ConfigRegistry.Share)
@@ -71,6 +77,35 @@ func NewNetease(app *model.App) *Netease {
 	return n
 }
 
+// listenForEvents is a tea.Cmd that blocks until an event is received
+// from our application's core, then returns it as a tea.Msg for the Update loop.
+func (n *Netease) listenForEvents() tea.Cmd {
+	return func() tea.Msg {
+		event, ok := <-n.eventChan
+		if !ok {
+			return nil
+		}
+		return event
+	}
+}
+
+func (n *Netease) Init(app *model.App) tea.Cmd {
+	// Return our custom command to start listening for the first event.
+	return n.listenForEvents()
+}
+
+// Update is the main message loop for the UI.
+func (n *Netease) Update(msg tea.Msg, cliApp *model.App) (tea.Model, tea.Cmd) {
+	// First, check if the message is an event from our new application core.
+	if event, ok := msg.(app.Event); ok {
+		log.Printf("Received core event: %T", event)
+		return n.App, n.listenForEvents()
+	}
+	slog.Debug("skip")
+	// For all other messages (like tea.KeyMsg, tea.MouseMsg, etc.),
+	return n.App.Update(msg)
+}
+
 // ToLoginPage 需要登录的处理
 func (n *Netease) ToLoginPage(callback func() model.Page) (model.Page, tea.Cmd) {
 	n.login.AfterLogin = callback
@@ -85,7 +120,7 @@ func (n *Netease) ToSearchPage(searchType SearchType) (model.Page, tea.Cmd) {
 
 func (n *Netease) InitHook(_ *model.App) {
 	config := configs.ConfigRegistry
-	dataDir := app.DataDir()
+	dataDir := _app.DataDir()
 
 	// 全局文件Jar
 	cookieJar, _ := cookiejar.NewFileJar(filepath.Join(dataDir, "cookie"), nil)
