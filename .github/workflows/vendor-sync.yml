@@ -1,0 +1,79 @@
+name: Sync Go Vendor
+
+on:
+  push:
+    branches:
+      - main
+      - feat/vendor-auto-update
+    paths:
+      - 'go.mod'
+      - 'go.sum'
+      - '.github/workflows/vendor-sync.yml'
+
+jobs:
+  vendor-sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ssh-key: ${{ secrets.SSH_PRIVATE_KEY }}
+          persist-credentials: true
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "^1.22.0"
+
+      - name: Run go mod vendor
+        run: |
+          go mod tidy
+          go mod vendor
+
+      # - name: Configure Git
+      #   run: |
+      #     git config --global user.name 'github-actions[bot]'
+      #     git config --global user.email 'github-actions[bot]@users.noreply.github.com'
+
+      # - name: Check for Vendor Changes
+      #   id: check_changes
+      #   run: |
+      #     git add go.mod go.sum vendor/
+          
+      #     if ! git diff --cached --quiet; then
+      #       echo "Changes detected in vendor directory or go modules."
+      #       echo "has_changes=true" >> $GITHUB_OUTPUT
+      #     else
+      #       echo "No changes detected."
+      #       echo "has_changes=false" >> $GITHUB_OUTPUT
+      #     fi
+
+      # - name: Commit changes
+      #   if: steps.check_changes.outputs.has_changes == 'true'
+      #   run: |
+      #     git commit -m "chore(vendor): sync go vendor directory"
+
+      # - name: Push changes
+      #   if: steps.check_changes.outputs.has_changes == 'true'
+      #   run: |
+      #     echo "Pushing changes to the repository..."
+      #     git push
+
+      - name: Create Pull Request for Vendor Updates
+        uses: peter-evans/create-pull-request@v6
+        with:
+          commit-message: "chore(vendor): sync go vendor directory"
+          committer: "github-actions[bot] <github-actions[bot]@users.noreply.github.com>"
+          author: "github-actions[bot] <github-actions[bot]@users.noreply.github.com>"
+          
+          title: "Chore: Automate vendor sync"
+          body: |
+            An automatic workflow has detected changes in `go.mod` or `go.sum` and updated the vendor directory accordingly.
+            
+            This PR is automatically generated. Please review and merge.
+          
+          branch: "bot/vendor-sync"
+          
+          labels: |
+            dependencies
+            autobot
