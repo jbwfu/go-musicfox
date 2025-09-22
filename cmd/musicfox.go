@@ -15,9 +15,11 @@ import (
 	"github.com/go-musicfox/go-musicfox/internal/types"
 	"github.com/go-musicfox/go-musicfox/utils/filex"
 	_ "github.com/go-musicfox/go-musicfox/utils/slogx"
+	"github.com/rs/zerolog/log"
 )
 
 func main() {
+	log.Info().Msg("Hello, Zerolog!")
 	runtime.Run(musicfox)
 }
 

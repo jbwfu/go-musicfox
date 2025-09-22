@@ -1,6 +1,6 @@
 module github.com/go-musicfox/go-musicfox
 
-go 1.23.0
+go 1.24.0
 
 require (
 	github.com/adrg/xdg v0.5.3
@@ -27,6 +27,7 @@ require (
 	github.com/muesli/termenv v0.15.2
 	github.com/pkg/errors v0.9.1
 	github.com/robotn/gohook v0.41.0
+	github.com/rs/zerolog v1.34.0
 	github.com/saltosystems/winrt-go v0.0.0-20240320184339-289d313a74b7
 	github.com/shkh/lastfm-go v0.0.0-20191215035245-89a801c244e0
 	github.com/skip2/go-qrcode v0.0.0-20200617195104-da1b6568686e
@@ -35,7 +36,7 @@ require (
 	github.com/tosone/minimp3 v1.0.2
 	go.etcd.io/bbolt v1.3.7
 	golang.org/x/sync v0.16.0
-	golang.org/x/sys v0.30.0
+	golang.org/x/sys v0.36.0
 )
 
 require (
@@ -58,7 +59,8 @@ require (
 	github.com/jfreymuth/vorbis v1.0.2 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
 	github.com/lucasb-eyer/go-colorful v1.2.0 // indirect
-	github.com/mattn/go-isatty v0.0.19 // indirect
+	github.com/mattn/go-colorable v0.1.14 // indirect
+	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/mattn/go-localereader v0.0.1 // indirect
 	github.com/mewkiz/flac v1.0.8 // indirect
 	github.com/mewkiz/pkg v0.0.0-20230226050401-4010bf0fec14 // indirect
