@@ -16,10 +16,12 @@ import (
 	"github.com/go-musicfox/go-musicfox/utils/filex"
 	_ "github.com/go-musicfox/go-musicfox/utils/slogx"
 	"github.com/rs/zerolog/log"
+	"go.uber.org/zap"
 )
 
 func main() {
 	log.Info().Msg("Hello, Zerolog!")
+	_, _ = zap.NewDevelopment()
 	runtime.Run(musicfox)
 }
 
